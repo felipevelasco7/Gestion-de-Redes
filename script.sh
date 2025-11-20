@@ -608,8 +608,29 @@ fix_python_wrapper_issue() {
         # Configurar base de datos si no está configurada
         php /opt/librenms/build-base.php 2>/dev/null || true
         
-        # Configurar el usuario admin por defecto
-        php /opt/librenms/adduser.php admin admin 10 admin@localhost.localdomain 2>/dev/null || echo 'Usuario admin ya existe'
+        # Configurar el usuario admin por defecto de manera más robusta
+        echo 'Configurando usuario admin...'
+        
+        # Verificar si el usuario existe y eliminarlo si es necesario
+        php /opt/librenms/lnms user:list 2>/dev/null | grep -q 'admin' && {
+            echo 'Usuario admin existe, eliminándolo para recrear...'
+            mysql -u librenms -ppassword librenms -e "DELETE FROM users WHERE username='admin';" 2>/dev/null || true
+        }
+        
+        # Crear usuario admin con contraseña hasheada correctamente
+        mysql -u librenms -ppassword librenms -e "
+        INSERT INTO users (username, password, realname, email, level, descr, can_modify_passwd, created_at, updated_at) 
+        VALUES ('admin', '\$2y\$10\$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Administrator', 'admin@localhost.localdomain', 10, 'Default Administrator', 1, NOW(), NOW())
+        ON DUPLICATE KEY UPDATE 
+        password='\$2y\$10\$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 
+        level=10, 
+        updated_at=NOW();
+        " 2>/dev/null || echo 'Creación directa en BD falló, intentando con adduser.php'
+        
+        # Método alternativo con adduser.php
+        php /opt/librenms/adduser.php admin password 10 admin@localhost.localdomain 2>/dev/null || true
+        
+        echo 'Usuario admin configurado: admin / password'
         
         # Ejecutar validate.php para verificar configuración
         php /opt/librenms/validate.php --fix 2>/dev/null || true
@@ -813,6 +834,70 @@ restart_and_verify_services() {
     log_success "Servicios reiniciados y verificados"
 }
 
+# Configurar usuarios y autenticación web
+configure_web_authentication() {
+    log_info "Configurando autenticación web y usuarios..."
+    
+    sudo docker exec librenms bash -c "
+        cd /opt/librenms
+        
+        # Asegurar que la base de datos esté completamente inicializada
+        php artisan migrate --force 2>/dev/null || true
+        
+        # Limpiar usuarios existentes para evitar conflictos
+        mysql -u librenms -ppassword librenms -e 'DELETE FROM users WHERE username=\"admin\";' 2>/dev/null || true
+        
+        # Crear usuario admin con diferentes métodos para asegurar compatibilidad
+        echo 'Creando usuario administrador...'
+        
+        # Método 1: Usando artisan (Laravel)
+        php artisan tinker --execute=\"
+            \\\$user = new App\\\Models\\\User();
+            \\\$user->username = 'admin';
+            \\\$user->password = bcrypt('password');
+            \\\$user->realname = 'Administrator';
+            \\\$user->email = 'admin@localhost.localdomain';
+            \\\$user->level = 10;
+            \\\$user->descr = 'Default Administrator';
+            \\\$user->can_modify_passwd = 1;
+            \\\$user->save();
+            echo 'Usuario creado via Artisan';
+        \" 2>/dev/null || echo 'Método Artisan falló'
+        
+        # Método 2: Inserción directa en base de datos con hash bcrypt
+        mysql -u librenms -ppassword librenms -e \"
+        INSERT IGNORE INTO users (username, password, realname, email, level, descr, can_modify_passwd, created_at, updated_at) 
+        VALUES ('admin', '\\\$2y\\\$10\\\$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Administrator', 'admin@localhost.localdomain', 10, 'Default Administrator', 1, NOW(), NOW());
+        \" 2>/dev/null && echo 'Usuario creado via SQL'
+        
+        # Método 3: Usando adduser.php con contraseña diferente
+        php adduser.php admin password 10 admin@localhost.localdomain 2>/dev/null && echo 'Usuario creado via adduser.php'
+        
+        # Verificar que el usuario fue creado
+        USER_COUNT=\$(mysql -u librenms -ppassword librenms -e 'SELECT COUNT(*) FROM users WHERE username=\"admin\";' -N 2>/dev/null || echo '0')
+        
+        if [ \"\$USER_COUNT\" -gt 0 ]; then
+            echo 'Usuario admin verificado en base de datos'
+            mysql -u librenms -ppassword librenms -e 'SELECT username, realname, email, level FROM users WHERE username=\"admin\";' 2>/dev/null || true
+        else
+            echo 'ERROR: Usuario admin no encontrado en base de datos'
+        fi
+        
+        # Configurar sesiones web correctamente
+        chown -R www-data:www-data /opt/librenms/storage 2>/dev/null || chown -R librenms:librenms /opt/librenms/storage
+        chmod -R 775 /opt/librenms/storage
+        
+        # Limpiar cache de autenticación
+        php artisan cache:clear 2>/dev/null || true
+        php artisan config:clear 2>/dev/null || true
+        php artisan session:flush 2>/dev/null || true
+        
+        echo 'Configuración de autenticación web completada'
+    " 2>/dev/null || log_warning "Algunos comandos de autenticación fallaron"
+    
+    log_success "Autenticación web configurada"
+}
+
 # Validar configuración final
 validate_final_setup() {
     log_info "Validando configuración final..."
@@ -915,6 +1000,26 @@ validate_final_setup() {
         log_warning "⚠️  Configuración de Laravel faltante"
     fi
     
+    # Verificar usuario admin en base de datos
+    if sudo docker exec librenms_db mysql -u librenms -ppassword librenms -e "SELECT username FROM users WHERE username='admin';" 2>/dev/null | grep -q "admin"; then
+        log_success "✅ Usuario admin encontrado en base de datos"
+        
+        # Mostrar detalles del usuario
+        log_info "Detalles del usuario admin:"
+        sudo docker exec librenms_db mysql -u librenms -ppassword librenms -e "SELECT username, realname, email, level FROM users WHERE username='admin';" 2>/dev/null || true
+    else
+        log_warning "⚠️  Usuario admin no encontrado en base de datos"
+        log_info "Recreando usuario admin..."
+        
+        # Recrear usuario si no existe
+        sudo docker exec librenms bash -c "
+            mysql -u librenms -ppassword librenms -e \"
+            INSERT IGNORE INTO users (username, password, realname, email, level, descr, can_modify_passwd, created_at, updated_at) 
+            VALUES ('admin', '\\\$2y\\\$10\\\$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Administrator', 'admin@localhost.localdomain', 10, 'Default Administrator', 1, NOW(), NOW());
+            \"
+        " 2>/dev/null || true
+    fi
+    
     # Ejecutar poller manual una vez para verificar funcionamiento
     log_info "Ejecutando poller manual de prueba..."
     sudo docker exec --user librenms librenms php /opt/librenms/poller.php -h $SERVER_IP -v 2>/dev/null | head -5 || log_warning "Poller manual no ejecutado correctamente"
@@ -970,8 +1075,14 @@ show_summary() {
     echo "================================================="
     echo
     log_success "URL de acceso: http://$SERVER_IP:8000"
+    log_info "🔐 CREDENCIALES DE ACCESO:"
+    echo "  👤 Usuario: admin"
+    echo "  🔑 Contraseña: password"
+    echo "  📧 Email: admin@localhost.localdomain"
+    echo "  🔰 Nivel: Administrador (10)"
+    echo
     log_info "Configuración completada automáticamente:"
-    echo "  📊 Base de datos: librenms / password"
+    echo "  📊 Base de datos: librenms / password" 
     echo "  🔧 SNMP Community: public (configurado automáticamente)"
     echo "  🖥️  Dispositivo local: $SERVER_IP (agregado automáticamente)"
     echo "  ⏰ Poller automático: cada 5 minutos (crontab + interno)"
@@ -1035,6 +1146,7 @@ main() {
     configure_background_services
     add_local_device
     setup_poller
+    configure_web_authentication
     restart_and_verify_services
     validate_final_setup
     show_summary
