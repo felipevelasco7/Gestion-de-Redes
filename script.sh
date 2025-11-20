@@ -618,8 +618,12 @@ fix_python_wrapper_issue() {
         fi
         
         # Crear usuario admin con contraseña hasheada correctamente
-        HASH_PASSWORD='$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi'
-        mysql -u librenms -ppassword librenms -e "INSERT INTO users (username, password, realname, email, level, descr, can_modify_passwd, created_at, updated_at) VALUES ('admin', '$HASH_PASSWORD', 'Administrator', 'admin@localhost.localdomain', 10, 'Default Administrator', 1, NOW(), NOW()) ON DUPLICATE KEY UPDATE password='$HASH_PASSWORD', level=10, updated_at=NOW();" 2>/dev/null || echo 'Creación directa en BD falló, intentando con adduser.php'
+        HASH_PASSWORD='\$2y\$10\$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi'
+        
+        # Comando SQL dividido para evitar errores de sintaxis
+        SQL_CMD="INSERT INTO users (username, password, realname, email, level, descr, can_modify_passwd, created_at, updated_at) VALUES ('admin', '$HASH_PASSWORD', 'Administrator', 'admin@localhost.localdomain', 10, 'Default Administrator', 1, NOW(), NOW()) ON DUPLICATE KEY UPDATE password='$HASH_PASSWORD', level=10, updated_at=NOW();"
+        
+        mysql -u librenms -ppassword librenms -e "$SQL_CMD" 2>/dev/null || echo 'Creación directa en BD falló, intentando con adduser.php'
         
         # Método alternativo con adduser.php
         php /opt/librenms/adduser.php admin password 10 admin@localhost.localdomain 2>/dev/null || true
@@ -1003,11 +1007,11 @@ validate_final_setup() {
         log_warning "⚠️  Usuario admin no encontrado en base de datos"
         log_info "Recreando usuario admin..."
         
-        # Recrear usuario si no existe
-        sudo docker exec librenms bash -c "
-            HASH='\$2y\$10\$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi'
-            mysql -u librenms -ppassword librenms -e \"INSERT IGNORE INTO users (username, password, realname, email, level, descr, can_modify_passwd, created_at, updated_at) VALUES ('admin', '\$HASH', 'Administrator', 'admin@localhost.localdomain', 10, 'Default Administrator', 1, NOW(), NOW());\"
-        " 2>/dev/null || true
+        # Recrear usuario si no existe  
+        sudo docker exec librenms bash -c '
+            HASH="$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi"
+            mysql -u librenms -ppassword librenms -e "INSERT IGNORE INTO users (username, password, realname, email, level, descr, can_modify_passwd, created_at, updated_at) VALUES (\"admin\", \"$HASH\", \"Administrator\", \"admin@localhost.localdomain\", 10, \"Default Administrator\", 1, NOW(), NOW());"
+        ' 2>/dev/null || true
     fi
     
     # Ejecutar poller manual una vez para verificar funcionamiento
