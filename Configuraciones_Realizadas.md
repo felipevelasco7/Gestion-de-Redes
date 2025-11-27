@@ -77,11 +77,11 @@ arp -n
 
 4) Habilitar y configurar SNMP en MikroTik
 
-- Habilitaste SNMP:
+- Habilitar SNMP:
 ```
 /snmp set enabled=yes
 ```
-- Añadiste la community (con la sintaxis correcta):
+- Añadir la community (con la sintaxis correcta):
 ```
 /snmp community add name=librenms addresses=192.168.173.0/24 read-access=yes write-access=no
 /snmp set contact="Felipe <tu@correo>" location="RaspberryPi"
@@ -204,35 +204,11 @@ Permitir SNMP/ICMP temporalmente en firewall (si hace falta):
 
 ---
 
-## Acciones pendientes y recomendaciones
-
-1. Eliminar la IP duplicada en `zabbix` (si no lo has hecho ya). Verificar que sólo quede la entrada en `bridge-15-16`.
-2. En LibreNMS, volver a añadir el router (Host = 192.168.173.1, Community = `librenms`). Si LibreNMS usa ping para validar, asegúrate de que ICMP esté permitido o usa opción "SNMP-only" al añadir.
-3. Seguridad SNMP: eliminar o restringir la community `public` (estaba como `::/0`). Por ejemplo:
-```
-/snmp community remove [find name="public"]
-# o restringirla a localhost
-/snmp community set [find name="public"] addresses=127.0.0.1
-```
-4. Considerar SNMPv3 si tu versión/hardware lo soportan (más seguro). Si `
-/snmp user` devuelve "bad command name user", tu RouterOS/modelo podría no exponer esa opción; revisar versión o considerar otras medidas (upgrade o SNMP proxy conversion).
-5. Hacer un backup de la configuración antes de cambios mayores:
-```
-/export file=config-backup
-```
-
----
-
 ## Notas finales
 
 - Se resolvieron los problemas de L2 y SNMP; la principal causa de la falta de conectividad L3 fue la duplicidad de IP en dos interfaces. Tras corregir eso las pruebas de ping y SNMP funcionaron.
-- Mantén comunidades SNMP restringidas, evita `public ::/0` en producción y usa SNMPv3 cuando sea posible.
+- Mantener comunidades SNMP restringidas, evitar `public ::/0` en producción y usar SNMPv3 cuando sea posible.
 
----
-
-Si quieres que guarde este documento con otro nombre en el repositorio o sistema de archivos (por ejemplo `network-troubleshoot-192168173.md`) o que aplique de forma segura el borrado de la entrada duplicada en el router por ti, dime y lo hago.
-
----
 
 ## Automatización del poller de LibreNMS (acciones realizadas)
 
