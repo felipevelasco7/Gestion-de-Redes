@@ -37,7 +37,7 @@ Trabajamos en la conexión de consola al MikroTik desde nuestro Mac, configuramo
 
 1) Conexión por consola al MikroTik (desde Mac)
 
-- Abriste consola serie (ej. `screen /dev/cu.xxx 115200`) y trabajaste en RouterOS.
+- Abrir consola serie (ej. `screen /dev/cu.xxx 115200`) y trabajar en RouterOS.
 
 2) Crear/verificar bridge entre `ether15` y `ether16`
 
