@@ -79,13 +79,13 @@ Gestion-de-Redes/
 ├── 🚀 deployLibrenms.sh                      # Script de despliegue automático basico
 ├── 🐳 docker-compose.yml                     # Configuración Docker optimizada
 ├── 🚀🚀 deploy-Librenms-with-config.sh       # Script de despliegue automatico que incluye las configuraciones iniciales de SNMP
-└── 📖 docs/                                  # Documentación adicional
+├── 📖 docs/                                  # Documentación adicional
     ├── 📋 GUIA DE DESPLIEGUE DOCKER LIBRENMS.md  # Guía básica de despliegue
     ├── ⚙️Configuraciones_Realizadas.md           # Guía de configuraciones, problemas encontrados, y soluciones aplicadas
     ├── 📑PDG1-Final.pdf                          # Documento preliminar del proyecto
     ├── 📑PDG2-FINAL.pdf                          # Documento formal del proyecto terminado
     └── 📄Plataforma de gestion de red para pequeños ISP.docx      # Documento formal en docx
-
+└── 🔗Anexos/                                   # Capturas e imagenes del proyecto
 ```
 
 ---
